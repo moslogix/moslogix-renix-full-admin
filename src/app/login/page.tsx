@@ -1,7 +1,6 @@
-export const dynamic = 'force-dynamic'
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
@@ -9,7 +8,13 @@ import { Eye, EyeOff, Zap, Lock, Mail, AlertCircle } from 'lucide-react'
 
 export default function LoginPage() {
   const router = useRouter()
-  const supabase = createClient()
+  const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null)
+  function getSupabase() {
+    if (!supabaseRef.current) {
+      supabaseRef.current = createClient()
+    }
+    return supabaseRef.current
+  }
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -22,7 +27,7 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { error } = await getSupabase().auth.signInWithPassword({ email, password })
 
     if (error) {
       setError(error.message)
@@ -160,4 +165,3 @@ export default function LoginPage() {
     </div>
   )
 }
-
