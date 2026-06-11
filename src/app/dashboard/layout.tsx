@@ -16,11 +16,11 @@ export default async function DashboardLayout({
   }
 
   // Fetch profile for role
-  const { data: profile } = await supabase
-    .from('profiles')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: profile } = await (supabase.from('profiles') as any)
     .select('role, full_name')
     .eq('id', user.id)
-    .single()
+    .single() as { data: { role: string; full_name: string | null } | null; error: unknown }
 
   const unreadCount = await supabase
     .from('notifications')

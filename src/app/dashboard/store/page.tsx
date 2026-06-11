@@ -107,8 +107,8 @@ export default function StoreSettingsPage() {
     if (!store) return
     setSaving(true)
 
-    const { error } = await supabase
-      .from('stores')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase.from('stores') as any)
       .update({
         name,
         logo_url: logoPreview,

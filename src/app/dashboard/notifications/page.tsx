@@ -60,8 +60,8 @@ export default function NotificationsPage() {
 
   async function markAllRead() {
     setMarkingRead(true)
-    const { error } = await supabase
-      .from('notifications')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase.from('notifications') as any)
       .update({ is_read: true })
       .eq('is_read', false)
 
@@ -74,7 +74,8 @@ export default function NotificationsPage() {
   }
 
   async function markOneRead(id: string) {
-    await supabase.from('notifications').update({ is_read: true }).eq('id', id)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase.from('notifications') as any).update({ is_read: true }).eq('id', id)
     setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, is_read: true } : n))
   }
 

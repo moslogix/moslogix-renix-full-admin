@@ -7,7 +7,7 @@ import { DataTable, type Column } from '@/components/ui/DataTable'
 import { toast } from 'sonner'
 import {
   Plus, Zap, Edit2, Trash2, X, ToggleLeft, ToggleRight,
-  Check, ChevronDown, Clock, History,
+  Check, History,
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import type { AutomationRule, AuditLog } from '@/types/database'
@@ -30,6 +30,16 @@ interface ActionConfig {
   message?: string
   url?: string
   supplier_id?: string
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const fromAny = (supabase: any, table: string) => supabase.from(table)
+
+function toActionConfigs(raw: unknown): ActionConfig[] {
+  if (!Array.isArray(raw)) return []
+  return raw.filter((item): item is ActionConfig =>
+    typeof item === 'object' && item !== null && 'type' in item
+  )
 }
 
 function TriggerBadge({ event }: { event: string }) {
@@ -66,8 +76,8 @@ export default function AutomationPage() {
 
   const load = useCallback(async () => {
     const [{ data: r }, { data: h }] = await Promise.all([
-      supabase.from('automation_rules').select('*').order('created_at', { ascending: false }),
-      supabase.from('audit_log').select('*').eq('entity_type', 'automation').order('created_at', { ascending: false }).limit(20),
+      fromAny(supabase, 'automation_rules').select('*').order('created_at', { ascending: false }) as Promise<{ data: AutomationRule[] | null }>,
+      fromAny(supabase, 'audit_log').select('*').eq('entity_type', 'automation').order('created_at', { ascending: false }).limit(20) as Promise<{ data: AuditLog[] | null }>,
     ])
     setRules(r ?? [])
     setHistory(h ?? [])
@@ -78,7 +88,9 @@ export default function AutomationPage() {
 
   function openCreate() {
     setEditRule(null)
-    setRuleName(''); setTrigger('stock.low'); setActionType('send_notification')
+    setRuleName('')
+    setTrigger('stock.low')
+    setActionType('send_notification')
     setActionConfig({ type: 'send_notification', title: '', message: '' })
     setShowModal(true)
   }
@@ -87,8 +99,8 @@ export default function AutomationPage() {
     setEditRule(rule)
     setRuleName(rule.name)
     setTrigger(rule.trigger_event)
-    const actions = rule.actions as ActionConfig[]
-    const first = actions?.[0] ?? { type: 'send_notification' }
+    const actions = toActionConfigs(rule.actions)
+    const first = actions[0] ?? { type: 'send_notification' }
     setActionType(first.type)
     setActionConfig(first)
     setShowModal(true)
@@ -102,31 +114,46 @@ export default function AutomationPage() {
     e.preventDefault()
     setSaving(true)
 
-    const { data: { user } } = await supabase.auth.getUser()
-    const { data: profile } = await supabase.from('profiles').select('store_id').eq('id', user!.id).single()
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { toast.error('Not authenticated'); setSaving(false); return }
 
-    const payload = {
-      name: ruleName,
-      trigger_event: trigger as AutomationRule['trigger_event'],
-      actions: [{ ...actionConfig, type: actionType }],
-      is_active: true,
-      store_id: profile?.store_id ?? '',
-    }
+      const { data: profile } = await fromAny(supabase, 'profiles')
+        .select('store_id')
+        .eq('id', user.id)
+        .single() as { data: { store_id: string } | null; error: unknown }
 
-    if (editRule) {
-      const { error } = await supabase.from('automation_rules').update(payload).eq('id', editRule.id)
-      if (error) toast.error(error.message)
-      else { toast.success('Rule updated'); setShowModal(false); load() }
-    } else {
-      const { error } = await supabase.from('automation_rules').insert(payload)
-      if (error) toast.error(error.message)
-      else { toast.success('Rule created'); setShowModal(false); load() }
+      const payload = {
+        name: ruleName,
+        trigger_event: trigger as AutomationRule['trigger_event'],
+        actions: [{ ...actionConfig, type: actionType }],
+        is_active: true,
+        store_id: profile?.store_id ?? '',
+      }
+
+      if (editRule) {
+        const { error } = await fromAny(supabase, 'automation_rules')
+          .update(payload)
+          .eq('id', editRule.id) as { error: { message: string } | null }
+        if (error) toast.error(error.message)
+        else { toast.success('Rule updated'); setShowModal(false); load() }
+      } else {
+        const { error } = await fromAny(supabase, 'automation_rules')
+          .insert(payload) as { error: { message: string } | null }
+        if (error) toast.error(error.message)
+        else { toast.success('Rule created'); setShowModal(false); load() }
+      }
+    } catch {
+      toast.error('Something went wrong')
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
   }
 
   async function toggleRule(rule: AutomationRule) {
-    const { error } = await supabase.from('automation_rules').update({ is_active: !rule.is_active }).eq('id', rule.id)
+    const { error } = await fromAny(supabase, 'automation_rules')
+      .update({ is_active: !rule.is_active })
+      .eq('id', rule.id) as { error: { message: string } | null }
     if (error) toast.error(error.message)
     else {
       toast.success(rule.is_active ? 'Rule deactivated' : 'Rule activated')
@@ -136,7 +163,9 @@ export default function AutomationPage() {
 
   async function deleteRule(id: string) {
     if (!confirm('Delete this rule?')) return
-    const { error } = await supabase.from('automation_rules').delete().eq('id', id)
+    const { error } = await fromAny(supabase, 'automation_rules')
+      .delete()
+      .eq('id', id) as { error: { message: string } | null }
     if (error) toast.error(error.message)
     else { toast.success('Rule deleted'); load() }
   }
@@ -156,14 +185,23 @@ export default function AutomationPage() {
         </div>
       ),
     },
-    { key: 'trigger_event', header: 'Trigger', render: (row) => <TriggerBadge event={row.trigger_event} /> },
+    {
+      key: 'trigger_event',
+      header: 'Trigger',
+      render: (row) => <TriggerBadge event={row.trigger_event} />,
+    },
     {
       key: 'actions',
       header: 'Action',
       render: (row) => {
-        const actions = row.actions as ActionConfig[]
-        const first = actions?.[0]
-        return <span className="text-xs text-text-secondary font-mono px-2 py-1 rounded" style={{ background: '#111827' }}>{first?.type ?? '—'}</span>
+        const actions = toActionConfigs(row.actions)
+        const first = actions[0]
+        return (
+          <span className="text-xs text-text-secondary font-mono px-2 py-1 rounded"
+            style={{ background: '#111827' }}>
+            {first?.type ?? '—'}
+          </span>
+        )
       },
     },
     {
@@ -190,10 +228,12 @@ export default function AutomationPage() {
       header: '',
       render: (row) => (
         <div className="flex items-center gap-1">
-          <button onClick={() => openEdit(row)} className="p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-bg-surface transition-colors">
+          <button onClick={() => openEdit(row)}
+            className="p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-bg-surface transition-colors">
             <Edit2 size={13} />
           </button>
-          <button onClick={() => deleteRule(row.id)} className="p-1.5 rounded text-danger hover:bg-danger/10 transition-colors">
+          <button onClick={() => deleteRule(row.id)}
+            className="p-1.5 rounded text-danger hover:bg-danger/10 transition-colors">
             <Trash2 size={13} />
           </button>
         </div>
@@ -207,7 +247,8 @@ export default function AutomationPage() {
 
       <div className="p-6 space-y-5">
         {/* Tabs */}
-        <div className="flex items-center gap-0 p-1 rounded-xl w-fit" style={{ background: '#0d1117', border: '1px solid #1e293b' }}>
+        <div className="flex items-center gap-0 p-1 rounded-xl w-fit"
+          style={{ background: '#0d1117', border: '1px solid #1e293b' }}>
           {(['rules', 'history'] as const).map((tab) => (
             <button
               key={tab}
@@ -242,13 +283,13 @@ export default function AutomationPage() {
             />
           </>
         ) : (
-          <div
-            className="rounded-xl overflow-hidden"
-            style={{ background: '#0d1117', border: '1px solid #1e293b' }}
-          >
+          <div className="rounded-xl overflow-hidden"
+            style={{ background: '#0d1117', border: '1px solid #1e293b' }}>
             {loading ? (
               <div className="p-4 space-y-3">
-                {Array.from({ length: 5 }).map((_, i) => <div key={i} className="skeleton h-12 rounded-lg" />)}
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="skeleton h-12 rounded-lg" />
+                ))}
               </div>
             ) : history.length === 0 ? (
               <div className="text-center py-12 text-text-muted text-sm">No automation history</div>
@@ -289,17 +330,29 @@ export default function AutomationPage() {
               <h3 className="text-base font-semibold text-text-primary">
                 {editRule ? 'Edit Rule' : 'New Automation Rule'}
               </h3>
-              <button onClick={() => setShowModal(false)} className="text-text-muted hover:text-text-primary"><X size={18} /></button>
+              <button onClick={() => setShowModal(false)} className="text-text-muted hover:text-text-primary">
+                <X size={18} />
+              </button>
             </div>
 
             <form onSubmit={handleSave} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">Rule Name</label>
-                <input value={ruleName} onChange={(e) => setRuleName(e.target.value)} className="input-base" placeholder="Low stock reorder" required />
+                <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">
+                  Rule Name
+                </label>
+                <input
+                  value={ruleName}
+                  onChange={(e) => setRuleName(e.target.value)}
+                  className="input-base"
+                  placeholder="Low stock reorder"
+                  required
+                />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">Trigger Event</label>
+                <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">
+                  Trigger Event
+                </label>
                 <select value={trigger} onChange={(e) => setTrigger(e.target.value)} className="input-base">
                   {TRIGGER_EVENTS.map((t) => (
                     <option key={t.value} value={t.value}>{t.label} — {t.desc}</option>
@@ -308,17 +361,23 @@ export default function AutomationPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">Action Type</label>
+                <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">
+                  Action Type
+                </label>
                 <select
                   value={actionType}
-                  onChange={(e) => { setActionType(e.target.value); setActionConfig({ type: e.target.value }) }}
+                  onChange={(e) => {
+                    setActionType(e.target.value)
+                    setActionConfig({ type: e.target.value })
+                  }}
                   className="input-base"
                 >
-                  {ACTION_TYPES.map((a) => <option key={a} value={a}>{a.replace(/_/g, ' ')}</option>)}
+                  {ACTION_TYPES.map((a) => (
+                    <option key={a} value={a}>{a.replace(/_/g, ' ')}</option>
+                  ))}
                 </select>
               </div>
 
-              {/* Dynamic action fields */}
               {actionType === 'send_email' && (
                 <div className="space-y-3 p-3 rounded-xl" style={{ background: '#111827', border: '1px solid #1e293b' }}>
                   <input value={actionConfig.to ?? ''} onChange={(e) => updateActionConfig('to', e.target.value)} className="input-base" placeholder="To: email@example.com" />
@@ -339,9 +398,13 @@ export default function AutomationPage() {
               )}
 
               <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setShowModal(false)} className="btn-secondary flex-1">Cancel</button>
+                <button type="button" onClick={() => setShowModal(false)} className="btn-secondary flex-1">
+                  Cancel
+                </button>
                 <button type="submit" disabled={saving} className="btn-primary flex-1 flex items-center justify-center gap-2">
-                  {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Check size={14} />}
+                  {saving
+                    ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    : <Check size={14} />}
                   {saving ? 'Saving...' : editRule ? 'Update Rule' : 'Create Rule'}
                 </button>
               </div>

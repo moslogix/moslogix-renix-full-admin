@@ -146,8 +146,8 @@ export default function PageBuilderPage() {
 
   const loadConfig = useCallback(async () => {
     setLoading(true)
-    const { data } = await supabase
-      .from('ui_configs')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase.from('ui_configs') as any)
       .select('*')
       .eq('platform', platform)
       .eq('page', page)
@@ -194,16 +194,19 @@ export default function PageBuilderPage() {
   async function handleSave() {
     setSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
-    const { data: profile } = await supabase.from('profiles').select('store_id').eq('id', user!.id).single()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: profile } = await (supabase.from('profiles') as any).select('store_id').eq('id', user!.id).single()
 
     const layout = { components }
 
     if (configId) {
-      const { error } = await supabase.from('ui_configs').update({ layout }).eq('id', configId)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase.from('ui_configs') as any).update({ layout }).eq('id', configId)
       if (error) toast.error(error.message)
       else toast.success('Page config saved')
     } else {
-      const { data, error } = await supabase.from('ui_configs').insert({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase.from('ui_configs') as any).insert({
         platform, page, layout, is_active: true,
         store_id: profile?.store_id ?? '',
       }).select().single()

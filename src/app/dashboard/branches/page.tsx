@@ -10,11 +10,13 @@ import {
   Users, ToggleLeft, ToggleRight, Check,
 } from 'lucide-react'
 import type { Branch, Profile } from '@/types/database'
-import { formatDate } from '@/lib/utils'
 
 interface BranchWithCount extends Branch {
   employee_count?: number
 }
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const fromAny = (supabase: any, table: string) => supabase.from(table)
 
 export default function BranchesPage() {
   const supabase = createClient()
@@ -33,12 +35,12 @@ export default function BranchesPage() {
 
   const load = useCallback(async () => {
     const [{ data: br }, { data: emps }] = await Promise.all([
-      supabase.from('branches').select('*').order('created_at'),
-      supabase.from('profiles').select('*').neq('role', 'customer'),
+      fromAny(supabase, 'branches').select('*').order('created_at') as Promise<{ data: Branch[] | null }>,
+      fromAny(supabase, 'profiles').select('*').neq('role', 'customer') as Promise<{ data: Profile[] | null }>,
     ])
-    const branchesWithCount = (br ?? []).map((b) => ({
+    const branchesWithCount = (br ?? []).map((b: Branch) => ({
       ...b,
-      employee_count: (emps ?? []).filter((e) => e.branch_id === b.id).length,
+      employee_count: (emps ?? []).filter((e: Profile) => e.branch_id === b.id).length,
     }))
     setBranches(branchesWithCount)
     setEmployees(emps ?? [])
@@ -64,34 +66,45 @@ export default function BranchesPage() {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
+    try {
+      if (editBranch) {
+        const { error } = await fromAny(supabase, 'branches')
+          .update({ name, address, phone })
+          .eq('id', editBranch.id) as { error: { message: string } | null }
+        if (error) toast.error(error.message)
+        else { toast.success('Branch updated'); setShowModal(false); load() }
+      } else {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) { toast.error('Not authenticated'); return }
 
-    if (editBranch) {
-      const { error } = await supabase.from('branches').update({ name, address, phone }).eq('id', editBranch.id)
-      if (error) toast.error(error.message)
-      else { toast.success('Branch updated'); setShowModal(false); load() }
-    } else {
-      // Get store_id from current user profile
-      const { data: { user } } = await supabase.auth.getUser()
-      const { data: profile } = await supabase.from('profiles').select('store_id').eq('id', user!.id).single()
-      const { error } = await supabase.from('branches').insert({
-        name, address, phone, is_active: true,
-        store_id: profile?.store_id ?? '',
-      })
-      if (error) toast.error(error.message)
-      else { toast.success('Branch created'); setShowModal(false); load() }
+        const { data: profile } = await fromAny(supabase, 'profiles')
+          .select('store_id')
+          .eq('id', user.id)
+          .single() as { data: { store_id: string } | null; error: unknown }
+
+        const { error } = await fromAny(supabase, 'branches')
+          .insert({ name, address, phone, is_active: true, store_id: profile?.store_id ?? '' }) as { error: { message: string } | null }
+        if (error) toast.error(error.message)
+        else { toast.success('Branch created'); setShowModal(false); load() }
+      }
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
   }
 
   async function handleDelete(id: string) {
     if (!confirm('Delete this branch?')) return
-    const { error } = await supabase.from('branches').delete().eq('id', id)
+    const { error } = await fromAny(supabase, 'branches')
+      .delete()
+      .eq('id', id) as { error: { message: string } | null }
     if (error) toast.error(error.message)
     else { toast.success('Branch deleted'); load() }
   }
 
   async function toggleActive(branch: Branch) {
-    const { error } = await supabase.from('branches').update({ is_active: !branch.is_active }).eq('id', branch.id)
+    const { error } = await fromAny(supabase, 'branches')
+      .update({ is_active: !branch.is_active })
+      .eq('id', branch.id) as { error: { message: string } | null }
     if (error) toast.error(error.message)
     else {
       toast.success(branch.is_active ? 'Branch deactivated' : 'Branch activated')
@@ -100,14 +113,17 @@ export default function BranchesPage() {
   }
 
   async function assignEmployee(empId: string, branchId: string | null) {
-    const { error } = await supabase.from('profiles').update({ branch_id: branchId }).eq('id', empId)
+    const { error } = await fromAny(supabase, 'profiles')
+      .update({ branch_id: branchId })
+      .eq('id', empId) as { error: { message: string } | null }
     if (error) toast.error(error.message)
     else {
       toast.success('Employee assigned')
-      setEmployees((prev) => prev.map((e) => e.id === empId ? { ...e, branch_id: branchId } : e))
+      const updatedEmployees = employees.map((e) => e.id === empId ? { ...e, branch_id: branchId } : e)
+      setEmployees(updatedEmployees)
       setBranches((prev) => prev.map((b) => ({
         ...b,
-        employee_count: employees.filter((e) => e.id === empId ? b.id === branchId : e.branch_id === b.id).length,
+        employee_count: updatedEmployees.filter((e) => e.branch_id === b.id).length,
       })))
     }
   }
@@ -148,7 +164,7 @@ export default function BranchesPage() {
       render: (row) => (
         <div className="flex items-center gap-1.5 text-text-secondary text-sm">
           <Users size={12} className="text-text-muted" />
-          {(row as BranchWithCount).employee_count ?? 0}
+          {row.employee_count ?? 0}
         </div>
       ),
     },
@@ -296,7 +312,7 @@ export default function BranchesPage() {
                     }}
                   >
                     <div>
-                      <div className="text-sm font-medium text-text-primary">{emp.full_name ?? emp.email}</div>
+                      <div className="text-sm font-medium text-text-primary">{emp.full_name ?? emp.phone ?? '—'}</div>
                       <div className="text-xs text-text-muted capitalize">{emp.role}</div>
                     </div>
                     <button

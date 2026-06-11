@@ -74,8 +74,10 @@ export default function DashboardPage() {
         .neq('customer_id', null)
         .gte('created_at', thirtyDaysAgo)
 
-      const todayRev = (todayOrders ?? []).reduce((s, o) => s + (o.total_amount ?? 0), 0)
-      const yestRev = (yestOrders ?? []).reduce((s, o) => s + (o.total_amount ?? 0), 0)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const todayRev = (todayOrders ?? []).reduce((s, o: any) => s + (o.total_amount ?? 0), 0)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const yestRev = (yestOrders ?? []).reduce((s, o: any) => s + (o.total_amount ?? 0), 0)
       const revTrend = yestRev > 0 ? ((todayRev - yestRev) / yestRev) * 100 : 0
       const ordTrend = (yestOrders?.length ?? 0) > 0
         ? (((todayOrders?.length ?? 0) - (yestOrders?.length ?? 0)) / (yestOrders?.length ?? 1)) * 100

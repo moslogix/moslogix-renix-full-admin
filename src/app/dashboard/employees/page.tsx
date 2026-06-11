@@ -82,14 +82,16 @@ export default function EmployeesPage() {
   }
 
   async function handleRoleChange(id: string, role: string) {
-    const { error } = await supabase.from('profiles').update({ role: role as Profile['role'] }).eq('id', id)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase.from('profiles') as any).update({ role: role as Profile['role'] }).eq('id', id)
     if (error) { toast.error('Failed to update role'); return }
     toast.success('Role updated')
     setEmployees((prev) => prev.map((e) => e.id === id ? { ...e, role: role as Profile['role'] } : e))
   }
 
   async function handleDeactivate(id: string, current: boolean) {
-    const { error } = await supabase.from('profiles').update({ is_active: !current }).eq('id', id)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase.from('profiles') as any).update({ is_active: !current }).eq('id', id)
     if (error) { toast.error('Failed to update status'); return }
     toast.success(current ? 'Employee deactivated' : 'Employee activated')
     setEmployees((prev) => prev.map((e) => e.id === id ? { ...e, is_active: !current } : e))
@@ -118,11 +120,11 @@ export default function EmployeesPage() {
             className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
             style={{ background: 'linear-gradient(135deg,#4f56e7,#6272f3)' }}
           >
-            {getInitials(row.full_name ?? row.email)}
+            {getInitials(row.full_name ?? row.phone ?? '')}
           </div>
           <div>
             <div className="text-sm font-medium text-text-primary">{row.full_name ?? '—'}</div>
-            <div className="text-xs text-text-muted">{row.email}</div>
+            <div className="text-xs text-text-muted">{row.phone ?? '—'}</div>
           </div>
         </div>
       ),
@@ -279,7 +281,7 @@ export default function EmployeesPage() {
           >
             <div className="flex items-center justify-between mb-5">
               <div>
-                <h3 className="text-base font-semibold text-text-primary">{selectedEmployee.full_name ?? selectedEmployee.email}</h3>
+                <h3 className="text-base font-semibold text-text-primary">{selectedEmployee.full_name ?? selectedEmployee.phone ?? '—'}</h3>
                 <p className="text-xs text-text-muted mt-0.5">Shift History</p>
               </div>
               <button onClick={() => setSelectedEmployee(null)} className="text-text-muted hover:text-text-primary">
